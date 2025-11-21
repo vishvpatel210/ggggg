@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Subway Runner (2D)</title>
+<style>
+  body {
+    margin: 0;
+    background: linear-gradient(#6ec6ff, #2196f3);
+    overflow: hidden;
+  }
+  canvas {
+    display: block;
+    margin: auto;
+    background: #87ceeb;
+  }
+</style>
+</head>
+<body>
+<canvas id="gameCanvas" width="800" height="400"></canvas>
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+
+let gameSpeed = 5;
+let gravity = 0.8;
+let score = 0;
+let isGameOver = false;
+
+// Runner (man)
+const player = {
+  x: 120,
+  y: 0,
+  width: 30,
+  height: 50,
+  lane: 1, // 0 = left, 1 = middle, 2 = right
+  dy: 0,
+  jumping: false,
+  sliding: false
+};
+
+// Lanes
+const lanesY = [250, 300, 350];
+
+// Obstacles & coins
+let obstacles = [];
+let coins = [];
+
+function drawTracks() {
+  ctx.fillStyle = '#555';
+  ctx.fillRect(0, 200, canvas.width, 200);
+  ctx.strokeStyle = '#999';
+  ctx.lineWidth = 3;
+  for (let i = 1; i < 3; i++) {
+    ctx.beginPath();
+    ctx.moveTo(0, 200 + i * 66);
+    ctx.lineTo(canvas.width, 200 + i * 66);
+    ctx.stroke();
+  }
+}
+
+function drawPlayer() {
+  ctx.fillStyle = 'red';
+  ctx.fillRect(player.x, player.y, player.width, player.height);
+  // head
+  ctx.beginPath();
+  ctx.arc(player.x + 15, player.y - 10, 10, 0, Math.PI * 2);
+  ctx.fillStyle = '#ffcc80';
+  ctx.fill();
+}
+
+function drawObstacles() {
+  ctx.fillStyle = '#222';
+  obstacles.forEach(o => {
+    ctx.fillRect(o.x, o.y, o.w, o.h);
+  });
+}
+
+function drawCoins() {
+  ctx.fillStyle = 'gold';
+  coins.forEach(c => {
+    ctx.beginPath();
+    ctx.arc(c.x, c.y, c.r, 0, Math.PI * 2);
+    ctx.fill();
+  });
+}
+
+function handlePlayerMovement() {
+  if (player.jumping) {
+    player.dy += gravity;
+    player.y += player.dy;
+    if (player.y >= lanesY[player.lane] - player.height) {
+      player.y = lanesY[player.lane] - player.height;
+      player.jumping = false;
+      player.dy = 0;
+    }
+  }
+}
+
+function createObstacle() {
+  const lane = Math.floor(Math.random() * 3);
+  const obs = {
+    x: canvas.width,
+    y: lanesY[lane] - 40,
+    w: 40,
+    h: 40,
+    lane: lane
+  };
+  obstacles.push(obs);
+}
+
+function createCoin() {
+  const lane = Math.floor(Math.random() * 3);
+  const coin = {
+    x: canvas.width,
+    y: lanesY[lane] - 60,
+    r: 10,
+    lane: lane
+  };
+  coins.push(coin);
+}
+
+let frame = 0;
+function update() {
+  if (isGameOver) return;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  drawTracks();
+  drawPlayer();
+  drawObstacles();
+  drawCoins();
+
+  handlePlayerMovement();
+
+  // Move obstacles and coins
+  obstacles.forEach(o => (o.x -= gameSpeed));
+  coins.forEach(c => (c.x -= gameSpeed));
+
+  // Collision detection
+  obstacles.forEach(o => {
+    if (
+      player.x < o.x + o.w &&
+      player.x + player.width > o.x &&
+      player.y < o.y + o.h &&
+      player.y + player.height > o.y
+    ) {
+      isGameOver = true;
+    }
+  });
+
+  coins = coins.filter(c => {
+    if (
+      player.x < c.x + c.r &&
+      player.x + player.width > c.x &&
+      player.y < c.y + c.r &&
+      player.y + player.height > c.y
+    ) {
+      score += 10;
+      return false;
+    }
+    return c.x + c.r > 0;
+  });
+
+  obstacles = obstacles.filter(o => o.x + o.w > 0);
+
+  // Add new items
+  if (frame % 100 === 0) createObstacle();
+  if (frame % 150 === 0) createCoin();
+
+  frame++;
+
+  // Score & UI
+  ctx.fillStyle = 'black';
+  ctx.font = '20px Arial';
+  ctx.fillText('Score: ' + score, 10, 30);
+
+  if (isGameOver) {
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = 'white';
+    ctx.font = '40px Arial';
+    ctx.fillText('Game Over', canvas.width / 2 - 100, 180);
+    ctx.font = '20px Arial';
+    ctx.fillText('Press R to Restart', canvas.width / 2 - 80, 220);
+  } else {
+    requestAnimationFrame(update);
+  }
+}
+
+function jump() {
+  if (!player.jumping) {
+    player.jumping = true;
+    player.dy = -12;
+  }
+}
+
+function changeLane(dir) {
+  if (dir === 'left' && player.lane > 0) player.lane--;
+  if (dir === 'right' && player.lane < 2) player.lane++;
+  player.y = lanesY[player.lane] - player.height;
+}
+
+function restartGame() {
+  isGameOver = false;
+  score = 0;
+  obstacles = [];
+  coins = [];
+  frame = 0;
+  player.lane = 1;
+  player.y = lanesY[player.lane] - player.height;
+  update();
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'ArrowUp') jump();
+  if (e.key === 'ArrowLeft') changeLane('left');
+  if (e.key === 'ArrowRight') changeLane('right');
+  if (e.key.toLowerCase() === 'r' && isGameOver) restartGame();
+});
+
+player.y = lanesY[player.lane] - player.height;
+update();
+</script>
+</body>
+</html>

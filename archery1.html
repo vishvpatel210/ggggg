@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Archery Game</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{
+    background:linear-gradient(#87ceeb,#fff);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    height:100vh;
+    font-family:Arial, sans-serif;
+    overflow:hidden;
+  }
+  canvas{
+    background:linear-gradient(to bottom,#a8e0ff 0%,#ffffff 100%);
+    border:4px solid #003366;
+    border-radius:10px;
+  }
+</style>
+</head>
+<body>
+<canvas id="game" width="800" height="500"></canvas>
+
+<script>
+const canvas=document.getElementById("game");
+const ctx=canvas.getContext("2d");
+
+let bowX=120, bowY=canvas.height/2;
+let arrow=null;
+let targetX=700, targetY=canvas.height/2;
+let angle=-Math.PI/8;
+let power=0;
+let isCharging=false;
+let score=0;
+
+// 🎯 Draw bow (flipped)
+function drawBow(ctx,x,y){
+  ctx.save();
+  ctx.translate(x,y);
+  ctx.scale(-1,1); // flip horizontally
+
+  // bow body
+  ctx.beginPath();
+  ctx.moveTo(0,-60);
+  ctx.quadraticCurveTo(40,0,0,60);
+  ctx.strokeStyle='#0044cc';
+  ctx.lineWidth=6;
+  ctx.shadowColor = '#66aaff';
+  ctx.shadowBlur = 10;
+  ctx.stroke();
+
+  // grip
+  ctx.fillStyle='#663300';
+  ctx.fillRect(-6,-8,12,16);
+
+  ctx.restore();
+}
+
+// 🏹 Draw arrow
+function drawArrow(ctx,x,y,angle){
+  ctx.save();
+  ctx.translate(x,y);
+  ctx.rotate(angle);
+  ctx.beginPath();
+  ctx.moveTo(-40,0);
+  ctx.lineTo(20,0);
+  ctx.strokeStyle="#333";
+  ctx.lineWidth=4;
+  ctx.stroke();
+
+  // Arrowhead
+  ctx.beginPath();
+  ctx.moveTo(20,0);
+  ctx.lineTo(10,-5);
+  ctx.lineTo(10,5);
+  ctx.closePath();
+  ctx.fillStyle="#cc0000";
+  ctx.fill();
+  ctx.restore();
+}
+
+// 🟢 Draw target
+function drawTarget(ctx,x,y){
+  const colors=["white","red","yellow"];
+  for(let i=0;i<3;i++){
+    ctx.beginPath();
+    ctx.arc(x,y,40-i*15,0,Math.PI*2);
+    ctx.fillStyle=colors[i];
+    ctx.fill();
+  }
+}
+
+// 🎯 Dotted aim line
+function drawDottedLine(ctx,x1,y1,x2,y2){
+  ctx.save();
+  ctx.setLineDash([6,8]);
+  ctx.strokeStyle="#0077cc";
+  ctx.lineWidth=2;
+  ctx.beginPath();
+  ctx.moveTo(x1,y1);
+  ctx.lineTo(x2,y2);
+  ctx.stroke();
+  ctx.restore();
+}
+
+// 💥 Arrow update
+function updateArrow(){
+  if(!arrow) return;
+  arrow.x += Math.cos(arrow.angle)*arrow.speed;
+  arrow.y += Math.sin(arrow.angle)*arrow.speed;
+  if(
+    arrow.x>canvas.width || arrow.y<0 || arrow.y>canvas.height
+  ){
+    arrow=null;
+  }
+  // hit detection
+  let dx=arrow.x-targetX;
+  let dy=arrow.y-targetY;
+  if(Math.sqrt(dx*dx+dy*dy)<40){
+    score++;
+    arrow=null;
+    targetY=Math.random()*(canvas.height-100)+50;
+  }
+}
+
+// 🔄 Main loop
+function loop(){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+
+  // Draw tracks (for depth feel)
+  ctx.fillStyle="#e0e0e0";
+  ctx.fillRect(0,canvas.height-30,canvas.width,30);
+
+  drawTarget(ctx,targetX,targetY);
+  drawBow(ctx,bowX,bowY);
+
+  let aimX = bowX + Math.cos(angle)*150;
+  let aimY = bowY + Math.sin(angle)*150;
+  drawDottedLine(ctx,bowX,bowY,aimX,aimY);
+
+  if(arrow) drawArrow(ctx,arrow.x,arrow.y,arrow.angle);
+
+  ctx.fillStyle="#003366";
+  ctx.font="20px Arial";
+  ctx.fillText("Score: "+score,20,30);
+
+  updateArrow();
+  requestAnimationFrame(loop);
+}
+loop();
+
+// 🎮 Controls
+window.addEventListener("keydown",e=>{
+  if(e.key==="ArrowUp") angle-=0.05;
+  if(e.key==="ArrowDown") angle+=0.05;
+  if(e.key===" "){
+    if(!isCharging){
+      isCharging=true;
+      power=0;
+      chargeArrow();
+    }
+  }
+});
+
+window.addEventListener("keyup",e=>{
+  if(e.key===" " && isCharging){
+    shootArrow();
+    isCharging=false;
+  }
+});
+
+function chargeArrow(){
+  if(isCharging){
+    power=Math.min(power+0.5,20);
+    setTimeout(chargeArrow,30);
+  }
+}
+
+function shootArrow(){
+  arrow={
+    x:bowX,
+    y:bowY,
+    angle:angle,
+    speed:power
+  };
+  power=0;
+}
+</script>
+</body>
+</html>
+

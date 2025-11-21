@@ -1,0 +1,318 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Archery Game (HTML5 Canvas)</title>
+  <style>
+    :root{ --bg:#0b1220; --accent:#3ea6ff; --panel:#0f1724; --text:#e6eef8 }
+    html,body{height:100%;margin:0;font-family:Inter,system-ui,Segoe UI,Arial}
+    body{display:flex;align-items:center;justify-content:center;background:linear-gradient(180deg,#061020 0%, #0c1725 100%);color:var(--text)}
+    .wrap{width:980px;max-width:98vw;background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));border-radius:14px;padding:12px;box-shadow:0 10px 30px rgba(2,6,23,0.6)}
+    header{display:flex;gap:12px;align-items:center;justify-content:space-between;margin-bottom:8px}
+    h1{font-size:18px;margin:0}
+    .info{display:flex;gap:8px;align-items:center}
+    .btn{background:var(--accent);color:#022; padding:6px 10px;border-radius:8px;border:none;font-weight:600;cursor:pointer}
+    canvas{display:block;border-radius:10px;background:linear-gradient(#7fc5ff0a,#0000000a);width:100%;height:560px}
+    .hud{display:flex;gap:12px;align-items:center;margin-top:8px}
+    .panel{background:var(--panel);padding:8px;border-radius:8px;min-width:120px}
+    .meter{height:10px;background:#0b1622;border-radius:6px;overflow:hidden}
+    .meter > i{display:block;height:100%;background:var(--accent);width:0%}
+    small{color:#9fb6d7}
+    @media (max-width:600px){canvas{height:420px}}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>Archery — HTML5 Canvas</h1>
+      <div class="info">
+        <button id="restart" class="btn">Restart</button>
+        <small>Click & drag to set aim/power — release to shoot</small>
+      </div>
+    </header>
+
+    <canvas id="c"></canvas>
+
+    <div class="hud">
+      <div class="panel">
+        <div>Score: <strong id="score">0</strong></div>
+        <div>Arrows left: <strong id="arrows">10</strong></div>
+        <div class="meter" style="margin-top:8px"><i id="powerBar"></i></div>
+        <small>Power</small>
+      </div>
+      <div class="panel">
+        <div>Wind: <strong id="wind">0</strong> m/s</div>
+        <div>Round: <strong id="round">1</strong></div>
+        <div style="margin-top:6px"><small>Hit moving target to score</small></div>
+      </div>
+      <div style="flex:1" class="panel">
+        <div><strong>How to play</strong></div>
+        <div style="font-size:13px;margin-top:6px">
+          Click and drag on the bow area to aim and set power, then release to shoot. Use <em>R</em> to restart.
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+(function(){
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+  function resize(){
+    canvas.width = canvas.clientWidth * devicePixelRatio;
+    canvas.height = canvas.clientHeight * devicePixelRatio;
+    ctx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);
+  }
+  resize();
+  window.addEventListener('resize', resize);
+
+  // Game state
+  let score = 0;
+  let arrowsLeft = 10;
+  let round = 1;
+  let wind = 0; // px/s (simple)
+
+  const scoreEl = document.getElementById('score');
+  const arrowsEl = document.getElementById('arrows');
+  const roundEl = document.getElementById('round');
+  const windEl = document.getElementById('wind');
+  const powerBar = document.getElementById('powerBar');
+
+  // Bow position (left side)
+  function bowPos(){
+    const margin = 24;
+    return {x:margin, y: canvas.clientHeight - 80};
+  }
+
+  // Targets array
+  let targets = [];
+  function spawnTargets(){
+    targets = [];
+    const rows = Math.min(3, round+1);
+    for(let i=0;i<rows;i++){
+      const y = 120 + i*100;
+      const speed = 30 + round*8;
+      targets.push({x: canvas.clientWidth - 120 - Math.random()*200, y, r: 28, vx: (Math.random()>0.5?1:-1)*speed/60, points: 10*(rows-i)});
+    }
+  }
+
+  spawnTargets();
+
+  // Arrow class
+  class Arrow{
+    constructor(x,y,angle,power){
+      this.x=x; this.y=y; this.vx = Math.cos(angle)*power; this.vy = -Math.sin(angle)*power; this.alive=true; this.angle=angle;
+      this.time=0;
+    }
+    update(dt){
+      // dt in seconds
+      this.time += dt;
+      // simple physics
+      const g = 500; // px/s^2
+      this.vy += g * dt;
+      // wind effect
+      this.vx += (wind*0.5) * dt;
+      this.x += this.vx * dt;
+      this.y += this.vy * dt;
+      this.angle = Math.atan2(-this.vy, this.vx);
+      // offscreen or ground
+      if(this.y > canvas.clientHeight - 20 || this.x > canvas.clientWidth + 50 || this.x < -50) this.alive=false;
+    }
+    draw(ctx){
+      ctx.save();
+      ctx.translate(this.x, this.y);
+      ctx.rotate(this.angle);
+      ctx.beginPath();
+      ctx.moveTo(-24,0); ctx.lineTo(8,0);
+      ctx.lineWidth=3; ctx.strokeStyle='#3b2'; ctx.stroke();
+      // arrow head
+      ctx.beginPath(); ctx.moveTo(8,0); ctx.lineTo(2,-5); ctx.lineTo(2,5); ctx.closePath(); ctx.fillStyle='#e25'; ctx.fill();
+      ctx.restore();
+    }
+  }
+
+  let arrows = [];
+
+  // Input: click & drag to set aim/power
+  let aiming=false; let aimStart=null; let aimCurrent=null;
+  canvas.addEventListener('pointerdown', (e)=>{
+    const b = bowPos();
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left; const my = e.clientY - rect.top;
+    // only allow aiming if near bow
+    if(Math.hypot(mx-b.x,my-b.y) < 120 && arrowsLeft>0){
+      aiming=true; aimStart={x:mx,y:my}; aimCurrent={x:mx,y:my};
+    }
+  });
+  window.addEventListener('pointermove', (e)=>{
+    if(!aiming) return;
+    const rect = canvas.getBoundingClientRect();
+    aimCurrent.x = e.clientX - rect.left; aimCurrent.y = e.clientY - rect.top;
+  });
+  window.addEventListener('pointerup', (e)=>{
+    if(!aiming) return; aiming=false;
+    if(arrowsLeft<=0) return;
+    const b = bowPos();
+    const dx = aimStart.x - aimCurrent.x; const dy = aimCurrent.y - aimStart.y; // drag direction gives power
+    const angle = Math.atan2(dy, dx); // angle relative to drag
+    // power proportional to drag distance
+    const dist = Math.hypot(dx,dy);
+    const maxPower = 900; // px/s
+    const power = Math.min(maxPower, dist*7 + 250);
+    // convert angle to shooting angle (to the right)
+    const shootAngle = Math.atan2(aimStart.y - aimCurrent.y, aimCurrent.x - aimStart.x);
+    // spawn arrow at bow
+    arrows.push(new Arrow(b.x+12, b.y, shootAngle, power));
+    arrowsLeft--; updateHUD();
+  });
+
+  // keyboard
+  window.addEventListener('keydown', (e)=>{
+    if(e.key.toLowerCase()==='r') restart();
+  });
+
+  function restart(){
+    score=0; arrowsLeft=10; round=1; spawnTargets(); arrows=[]; randomizeWind(); updateHUD();
+  }
+  document.getElementById('restart').addEventListener('click', restart);
+
+  function updateHUD(){
+    scoreEl.textContent = score;
+    arrowsEl.textContent = arrowsLeft;
+    roundEl.textContent = round;
+    windEl.textContent = (wind/10).toFixed(1);
+  }
+
+  // wind randomizer
+  function randomizeWind(){
+    wind = (Math.random()*40 - 20); // -20 .. +20
+  }
+  randomizeWind(); updateHUD();
+
+  // collision
+  function checkCollisions(){
+    for(const a of arrows){
+      for(const t of targets){
+        const dx = a.x - t.x; const dy = a.y - t.y;
+        if(Math.hypot(dx,dy) < t.r){
+          // hit!
+          if(a.alive){ score += t.points; a.alive = false; t.hit = true; }
+        }
+      }
+    }
+  }
+
+  // update targets
+  function updateTargets(dt){
+    for(const t of targets){
+      if(t.hit) continue;
+      t.x += t.vx * dt * 60; // scaled to look natural
+      // bounce inside area
+      if(t.x < 240 || t.x > canvas.clientWidth - 80) t.vx *= -1;
+    }
+    // remove hit targets after small delay
+    targets = targets.filter(t=>!(t.hit && (t._time||0) > 0.4));
+    for(const t of targets) t._time = (t._time||0) + dt;
+  }
+
+  // next round when all targets gone or arrows exhausted
+  function maybeNextRound(){
+    if(targets.length === 0){
+      round++; arrowsLeft += 5; spawnTargets(); randomizeWind(); updateHUD();
+    }
+    if(arrowsLeft <= 0 && arrows.length === 0){
+      // game over — simple restart
+      setTimeout(()=>{
+        if(confirm('Game over — your score: ' + score + '. Play again?')) restart();
+      },200);
+    }
+  }
+
+  // main loop
+  let last = performance.now();
+  function loop(now){
+    const dt = Math.min(0.05, (now - last)/1000);
+    last = now;
+
+    // clear
+    ctx.clearRect(0,0,canvas.clientWidth, canvas.clientHeight);
+
+    // draw sky / ground
+    ctx.fillStyle = '#0b1724';
+    ctx.fillRect(0,0,canvas.clientWidth, canvas.clientHeight);
+    // ground
+    ctx.fillStyle = '#19323d';
+    ctx.fillRect(0, canvas.clientHeight - 40, canvas.clientWidth, 40);
+
+    // draw wind indicator
+    ctx.save();
+    ctx.fillStyle = 'rgba(255,255,255,0.06)';
+    ctx.fillRect(10,10,220,48);
+    ctx.fillStyle = '#9fb6d7'; ctx.font = '12px system-ui';
+    ctx.fillText('Wind: ' + (wind/10).toFixed(1) + ' m/s (affects arrow)', 18, 32);
+    ctx.restore();
+
+    // draw bow
+    const b = bowPos();
+    drawBow(ctx,b.x,b.y);
+
+    // aiming visuals
+    if(aiming){
+      ctx.beginPath(); ctx.moveTo(b.x,b.y); ctx.lineTo(aimCurrent.x, aimCurrent.y); ctx.strokeStyle='rgba(62,166,255,0.9)'; ctx.lineWidth=2; ctx.stroke();
+      // draw power
+      const dx = aimStart.x - aimCurrent.x; const dy = aimCurrent.y - aimStart.y; const dist = Math.hypot(dx,dy);
+      const pct = Math.min(1, dist/150);
+      powerBar.style.width = (pct*100) + '%';
+    } else {
+      powerBar.style.width = '0%';
+    }
+
+    // update & draw targets
+    updateTargets(dt);
+    for(const t of targets){ drawTarget(ctx,t.x,t.y,t.r,t.points,t.hit); }
+
+    // update & draw arrows
+    for(const a of arrows){ if(a.alive) a.update(dt); }
+    checkCollisions();
+    arrows = arrows.filter(a=>a.alive || a.time < 0.2);
+    for(const a of arrows) a.draw(ctx);
+
+    // HUD small indicators
+    ctx.save(); ctx.fillStyle='#dff'; ctx.font='13px system-ui'; ctx.fillText('Score: ' + score, 18, canvas.clientHeight - 14); ctx.restore();
+
+    maybeNextRound();
+    updateHUD();
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+
+  function drawBow(ctx,x,y){
+    // string
+    ctx.save();
+    ctx.translate(x,y);
+    ctx.beginPath(); ctx.moveTo(0,-40); ctx.quadraticCurveTo(34,0,0,40); ctx.strokeStyle='#6ea6ff'; ctx.lineWidth=4; ctx.stroke();
+    // grip
+    ctx.fillStyle='#432c1e'; ctx.fillRect(-6,-6,12,12);
+    ctx.restore();
+  }
+
+  function drawTarget(ctx,x,y,r,points,hit){
+    ctx.save();
+    ctx.translate(x,y);
+    // outer ring
+    ctx.beginPath(); ctx.arc(0,0,r,0,Math.PI*2); ctx.fillStyle=hit? 'rgba(255,255,255,0.04)': '#ffecb3'; ctx.fill();
+    // rings
+    ctx.beginPath(); ctx.arc(0,0,r*0.66,0,Math.PI*2); ctx.fillStyle='#f28b8b'; ctx.fill();
+    ctx.beginPath(); ctx.arc(0,0,r*0.33,0,Math.PI*2); ctx.fillStyle='#f4f2a6'; ctx.fill();
+    // center
+    ctx.beginPath(); ctx.arc(0,0,8,0,Math.PI*2); ctx.fillStyle='#fff'; ctx.fill();
+    // points
+    ctx.fillStyle='#022'; ctx.font='12px system-ui'; ctx.fillText(points, -6, 4);
+    ctx.restore();
+  }
+
+})();
+</script>
+</body>
+</html>

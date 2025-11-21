@@ -1,0 +1,387 @@
+
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>UNO — Multiplayer Demo</title>
+  <style>
+    /* Reset & layout */
+    :root{
+      --bg:#071428; --card:#fff; --muted:#a8bed2; --accent:#ff3b30; --green:#27c93f;
+      --purple:#7c5cff; --yellow:#ffd166; --blue:#3ea6ff; --red:#ff5c7c;
+      --card-radius:10px;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%;margin:0;font-family:Inter,system-ui,Arial;background:linear-gradient(180deg,var(--bg),#08162c);color:#e8f1fb}
+    .wrap{max-width:1100px;margin:20px auto;padding:18px}
+    header{display:flex;align-items:center;justify-content:space-between;gap:12px}
+    h1{font-size:20px;margin:0}
+    .small{color:var(--muted);font-size:13px}
+
+    /* board */
+    .board{margin-top:18px;background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(0,0,0,0.08));border-radius:14px;padding:18px;display:grid;grid-template-columns:1fr 360px;gap:18px}
+
+    /* left: play area */
+    .play-area{position:relative;min-height:540px;border-radius:10px;padding:12px;background:linear-gradient(180deg,#082033, #0b2233);overflow:hidden}
+    .table-center{position:absolute;inset:80px 140px 80px 140px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px}
+
+    /* discard pile + draw pile */
+    .pile-row{display:flex;gap:18px;align-items:center}
+    .pile{width:120px;height:160px;border-radius:var(--card-radius);background:linear-gradient(180deg,#f7f7f7,#e5eefc);box-shadow:0 12px 30px rgba(2,8,23,0.6);display:flex;align-items:center;justify-content:center;font-weight:700;color:#222;transform:translateY(0);transition:transform .22s}
+    .pile.back{background:linear-gradient(180deg,#0b2750,#082041);color:#fff}
+
+    /* right: side panel (hand + chat) */
+    .panel{background:linear-gradient(180deg,#071a2a,#081628);padding:12px;border-radius:10px}
+    .hand{display:flex;flex-wrap:wrap;gap:8px;padding:8px;min-height:220px}
+
+    /* card visuals */
+    .card{width:72px;height:106px;border-radius:8px;background:var(--card);display:flex;align-items:center;justify-content:center;font-weight:800;color:#222;box-shadow:0 6px 18px rgba(2,8,23,0.4);cursor:pointer;user-select:none;transform-origin:center center;transition:transform .15s,box-shadow .15s}
+    .card:active{transform:translateY(6px) scale(.98);box-shadow:0 3px 10px rgba(2,8,23,0.3)}
+    .card.small{width:56px;height:86px}
+    .card.red{background:linear-gradient(180deg,#ff8a94,#ff5c7c);color:#fff}
+    .card.green{background:linear-gradient(180deg,#7af38a,#27c93f);color:#083012}
+    .card.blue{background:linear-gradient(180deg,#7fd8ff,#3ea6ff);color:#04314a}
+    .card.yellow{background:linear-gradient(180deg,#fff2a8,#ffd166);color:#2d200f}
+    .card.wild{background:linear-gradient(180deg,#232323,#111);color:#fff}
+
+    .card .num{font-size:28px}
+    .card .suit{font-size:12px;opacity:.9}
+
+    /* active player highlight */
+    .player-strip{display:flex;gap:12px;align-items:center;margin-bottom:10px}
+    .player-thumb{width:56px;height:56px;border-radius:12px;background:linear-gradient(180deg,#0b3b63,#04243e);display:flex;align-items:center;justify-content:center;font-weight:700}
+    .player-info{color:var(--muted)}
+
+    /* small animations */
+    .pop{animation:pop .28s ease}
+    @keyframes pop{0%{transform:scale(.6);opacity:0}100%{transform:scale(1);opacity:1}}
+
+    /* modal */
+    .modal{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:linear-gradient(0deg, rgba(2,6,15,0.6), rgba(2,6,15,0.6));}
+    .box{background:#071a2a;padding:18px;border-radius:12px;width:420px}
+
+    /* responsive */
+    @media (max-width:1000px){.board{grid-template-columns:1fr;}.play-area{min-height:420px}} 
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div>
+        <h1>UNO — Multiplayer Demo</h1>
+        <div class="small">Animated, responsive, and simple multiplayer over WebSocket (demo server included).</div>
+      </div>
+      <div>
+        <label class="small">Name: <input id="name" placeholder="Player" /></label>
+        <button id="joinBtn">Create / Join Room</button>
+      </div>
+    </header>
+
+    <main class="board">
+      <section class="play-area">
+        <div class="player-strip" id="playersStrip"></div>
+
+        <div class="table-center">
+          <div class="pile-row">
+            <div id="drawPile" class="pile back">DRAW</div>
+            <div id="discardPile" class="pile">DISCARD</div>
+          </div>
+          <div id="status" class="small">Waiting for players...</div>
+        </div>
+
+        <div style="position:absolute;left:16px;bottom:18px">Controls: click a card to play. Use Wild to pick color.</div>
+      </section>
+
+      <aside class="panel">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+          <div><strong>Your Hand</strong><div class="small">Click to play</div></div>
+          <div>Score: <span id="score">0</span></div>
+        </div>
+        <div id="hand" class="hand"></div>
+        <div style="margin-top:12px;display:flex;gap:8px">
+          <button id="drawBtn">Draw</button>
+          <button id="unoBtn">UNO</button>
+        </div>
+      </aside>
+    </main>
+  </div>
+
+  <!-- Wild color picker modal -->
+  <div id="modal" class="modal" style="display:none">
+    <div class="box">
+      <div style="font-weight:700;margin-bottom:8px">Choose a color</div>
+      <div style="display:flex;gap:8px">
+        <div class="card red small" data-color="red"><div class="num"> </div></div>
+        <div class="card green small" data-color="green"></div>
+        <div class="card blue small" data-color="blue"></div>
+        <div class="card yellow small" data-color="yellow"></div>
+      </div>
+    </div>
+  </div>
+
+<script>
+// --------------------------
+// Client-side UNO (websocket)
+// --------------------------
+
+const URL = 'ws://localhost:3000'; // server address (change if needed)
+let ws = null;
+let myId = null;
+let roomId = null;
+let playerName = '';
+let players = []; // array of {id,name,handCount,uno}
+let hand = [];
+let topDiscard = null;
+let isMyTurn = false;
+let canPlay = true;
+let wildPlayingCard = null;
+
+const joinBtn = document.getElementById('joinBtn');
+const nameInput = document.getElementById('name');
+const playersStrip = document.getElementById('playersStrip');
+const handEl = document.getElementById('hand');
+const drawPileEl = document.getElementById('drawPile');
+const discardPileEl = document.getElementById('discardPile');
+const statusEl = document.getElementById('status');
+const scoreEl = document.getElementById('score');
+const modal = document.getElementById('modal');
+const unoBtn = document.getElementById('unoBtn');
+const drawBtn = document.getElementById('drawBtn');
+
+// helpers
+function randInt(n){return Math.floor(Math.random()*n)}
+
+function connectThenJoin(){
+  if(!nameInput.value.trim()) nameInput.value = 'Player' + randInt(999);
+  playerName = nameInput.value.trim();
+  ws = new WebSocket(URL);
+  ws.onopen = ()=>{
+    joinBtn.disabled = true; joinBtn.textContent = 'Connected';
+    ws.send(JSON.stringify({t:'join', name:playerName}));
+  }
+  ws.onmessage = e => handleMsg(JSON.parse(e.data));
+  ws.onclose = ()=>{ joinBtn.disabled = false; joinBtn.textContent='Create / Join Room'; statusEl.textContent='Disconnected from server'; }
+}
+
+joinBtn.addEventListener('click', ()=>{
+  connectThenJoin();
+});
+
+// draw & discard interactions
+drawBtn.addEventListener('click', ()=>{ if(ws && ws.readyState===1) ws.send(JSON.stringify({t:'draw'})); });
+unoBtn.addEventListener('click', ()=>{ if(ws && ws.readyState===1) ws.send(JSON.stringify({t:'uno'})); });
+
+// choose wild color
+modal.addEventListener('click', (ev)=>{
+  const c = ev.target.closest('.card'); if(!c) return;
+  const color = c.dataset.color; modal.style.display='none';
+  if(wildPlayingCard && ws){ ws.send(JSON.stringify({t:'play', card:wildPlayingCard, wildColor:color})); wildPlayingCard=null; }
+});
+
+function handleMsg(msg){
+  switch(msg.t){
+    case 'welcome': myId=msg.you; roomId=msg.room; players=msg.players; updatePlayers(); statusEl.textContent = msg.status; break;
+    case 'state': // full game state
+      players = msg.players; hand = msg.hand; topDiscard = msg.discard; isMyTurn = msg.current === myId; updatePlayers(); renderHand(); renderDiscard(); statusEl.textContent = msg.status; scoreEl.textContent = msg.score || 0; break;
+    case 'error': alert(msg.message); break;
+    case 'playerLeft': players = msg.players; updatePlayers(); break;
+    case 'played': // animation cue
+      players = msg.players; topDiscard = msg.discard; updatePlayers(); renderDiscard(); break;
+    case 'gameOver': alert('Winner: ' + msg.winner); break;
+  }
+}
+
+function updatePlayers(){
+  playersStrip.innerHTML='';
+  players.forEach(p=>{
+    const div = document.createElement('div'); div.style.textAlign='center'; div.style.width='120px';
+    const thumb = document.createElement('div'); thumb.className='player-thumb'; thumb.textContent=p.name[0] || '?';
+    const info = document.createElement('div'); info.className='player-info'; info.innerHTML = `<div style="font-weight:700">${p.name}</div><div class='small'>Cards: ${p.handCount} ${p.uno?'<span style="color:var(--yellow)">UNO</span>':''}</div>`;
+    if(p.id === myId) info.innerHTML += '<div class="small">(You)</div>';
+    if(p.id === (players.find(pl=>pl.id===p.id)&&players.find(pl=>pl.id===p.id).id) && p.id === myId && false){}
+    div.appendChild(thumb); div.appendChild(info); playersStrip.appendChild(div);
+  });
+}
+
+function renderHand(){
+  handEl.innerHTML='';
+  hand.forEach((c, idx)=>{
+    const card = document.createElement('div'); card.className='card pop ' + colorClass(c.color); card.dataset.index = idx;
+    const num = document.createElement('div'); num.className='num'; num.textContent = c.value;
+    card.appendChild(num);
+    card.addEventListener('click', ()=>tryPlayCard(idx));
+    handEl.appendChild(card);
+  });
+}
+
+function colorClass(color){ if(color==='red') return 'red'; if(color==='green') return 'green'; if(color==='blue') return 'blue'; if(color==='yellow') return 'yellow'; return 'wild'; }
+
+function renderDiscard(){
+  discardPileEl.textContent = topDiscard? (topDiscard.color==='wild'? topDiscard.value + ' (' + (topDiscard.chosenColor||'any') + ')' : topDiscard.value) : 'DISCARD';
+  discardPileEl.className = 'pile ' + (topDiscard? colorClass(topDiscard.color):'');
+}
+
+function tryPlayCard(index){
+  if(!isMyTurn){ flashStatus('Not your turn'); return; }
+  const card = hand[index]; if(!card) return;
+  // client-side quick validation to avoid silly plays (server will fully validate)
+  const legal = isLegalToPlay(card, topDiscard);
+  if(!legal){ flashStatus('Cannot play that card'); return; }
+  if(card.value.toLowerCase().includes('wild')){
+    // show color picker
+    wildPlayingCard = card; modal.style.display='flex';
+  } else {
+    ws.send(JSON.stringify({t:'play', card}));
+  }
+}
+
+function isLegalToPlay(card, top){
+  if(!top) return true;
+  if(card.color === 'wild') return true;
+  if(card.color === top.color) return true;
+  if(card.value === top.value) return true;
+  return false;
+}
+
+function flashStatus(text){
+  statusEl.textContent = text; setTimeout(()=>{ statusEl.textContent = '' }, 1400);
+}
+
+// initial UI
+renderDiscard();
+
+</script>
+
+<!-- server.js (copy into a file when running server) -->
+<!--
+Node.js WebSocket server (ws)
+Save the following block as server.js and run `node server.js`
+-->
+
+<pre style="background:#021524;color:#bfe7ff;padding:12px;border-radius:8px;overflow:auto">
+// server.js
+const WebSocket = require('ws');
+const wss = new WebSocket.Server({ port: 3000 });
+console.log('UNO server listening on ws://localhost:3000');
+
+// Simple in-memory single-room lobby
+let clients = []; // {id, name, ws}
+let deck = [];
+let discard = null;
+let current = null; // id
+let direction = 1; // 1 forward, -1 reverse
+let started = false;
+
+function makeDeck(){
+  const colors = ['red','green','blue','yellow'];
+  const values = ['0','1','2','3','4','5','6','7','8','9','Skip','Reverse','Draw Two'];
+  let d = [];
+  colors.forEach(color=>{
+    d.push({color, value:'0'});
+    for(let i=1;i<values.length;i++){
+      d.push({color, value:values[i]});
+      d.push({color, value:values[i]});
+    }
+  });
+  for(let i=0;i<4;i++) d.push({color:'wild', value:'Wild'}), d.push({color:'wild', value:'Wild Draw Four'});
+  return shuffle(d);
+}
+function shuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]] } return a; }
+
+function broadcast(msg){ const text=JSON.stringify(msg); clients.forEach(c=>{ if(c.ws.readyState===1) c.ws.send(text); }); }
+
+function sendState(){
+  // send full state to each player individually (hand hidden to others)
+  clients.forEach((c, idx)=>{
+    const playerHands = clients.map(p=>({id:p.id,name:p.name,handCount:p.hand.length,uno:p.uno}));
+    const state = { t:'state', players:playerHands, hand: c.hand, discard, current, status: started? 'Game in progress':'Waiting', score:0 };
+    if(c.ws.readyState===1) c.ws.send(JSON.stringify(state));
+  });
+}
+
+wss.on('connection', ws =>{
+  const id = 'p'+Math.floor(Math.random()*100000);
+  const client = {id, name:'Guest', ws, hand:[], uno:false};
+  clients.push(client);
+  console.log('connect', id);
+
+  ws.on('message', raw=>{
+    let msg = {};
+    try{ msg = JSON.parse(raw); }catch(e){ return; }
+    if(msg.t === 'join'){
+      client.name = msg.name || client.name; client.hand = []; client.uno=false;
+      // send welcome
+      ws.send(JSON.stringify({ t:'welcome', you:client.id, room:'lobby', players:clients.map(c=>({id:c.id,name:c.name,handCount:c.hand.length,uno:c.uno})), status:'Joined lobby' }));
+      // auto-start when 2+ players
+      if(!started && clients.length >= 2){ startGame(); }
+    }
+    if(msg.t === 'draw'){ if(!started) return; drawCardFor(client); sendState(); }
+    if(msg.t === 'uno'){ client.uno = true; sendState(); }
+    if(msg.t === 'play'){
+      // validate basic play: card exists in hand
+      const cardIdx = client.hand.findIndex(c=> c.color===msg.card.color && c.value===msg.card.value );
+      if(cardIdx === -1){ ws.send(JSON.stringify({t:'error', message:'Card not in hand'})); return; }
+      const card = client.hand.splice(cardIdx,1)[0];
+      // validate against discard
+      if(!isLegal(card, discard)){ ws.send(JSON.stringify({t:'error', message:'Illegal play'})); client.hand.splice(cardIdx,0,card); return; }
+      // apply card
+      discard = card;
+      if(card.color === 'wild' && msg.wildColor) discard.chosenColor = msg.wildColor;
+      // handle special
+      advanceTurn();
+      // simple skip logic
+      if(card.value === 'Skip'){ advanceTurn(); }
+      if(card.value === 'Reverse'){ direction *= -1; if(clients.length===2) advanceTurn(); }
+      if(card.value === 'Draw Two'){ const target = findClientById(current); drawCardFor(target); drawCardFor(target); }
+      if(card.value === 'Wild Draw Four'){ const target = findClientById(current); for(let i=0;i<4;i++) drawCardFor(target); }
+      // check UNO or win
+      if(client.hand.length === 1){ client.uno = false; } // will be set by client
+      if(client.hand.length === 0){ broadcast({t:'gameOver', winner:client.name}); started=false; }
+      broadcast({t:'played', players:clients.map(c=>({id:c.id,name:c.name,handCount:c.hand.length,uno:c.uno})), discard});
+      sendState();
+    }
+  });
+
+  ws.on('close', ()=>{
+    clients = clients.filter(c=>c.id !== id);
+    broadcast({t:'playerLeft', players:clients.map(c=>({id:c.id,name:c.name,handCount:c.hand.length,uno:c.uno}))});
+  });
+
+});
+
+function findClientById(id){ return clients.find(c=>c.id===id); }
+
+function startGame(){
+  deck = makeDeck(); discard = null; started = true; direction = 1;
+  // give 7 cards each
+  clients.forEach(c=>{ c.hand = []; c.uno=false; for(let i=0;i<7;i++) c.hand.push(deck.pop()); });
+  // flip discard until non-wild
+  do{ discard = deck.pop(); }while(discard.color==='wild');
+  // set current to first player
+  current = clients[0].id;
+  sendState();
+}
+
+function drawCardFor(client){ if(deck.length === 0) deck = shuffle([discard].concat(deck)); client.hand.push(deck.pop()); }
+
+function advanceTurn(){
+  if(clients.length === 0) return;
+  const idx = clients.findIndex(c=>c.id === current);
+  let next = (idx + direction + clients.length) % clients.length;
+  current = clients[next].id;
+}
+
+function isLegal(card, top){
+  if(!top) return true;
+  if(card.color === 'wild') return true;
+  if(top.color === 'wild' && top.chosenColor){ if(card.color === top.chosenColor) return true; }
+  if(card.color === top.color) return true;
+  if(card.value === top.value) return true;
+  return false;
+}
+
+</pre>
+
+</body>
+</html>

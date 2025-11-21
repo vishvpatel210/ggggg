@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Fruit Slice Game</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    body {
+      background: radial-gradient(circle at center, #ffe259, #ffa751);
+      height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      overflow: hidden;
+      user-select: none;
+    }
+    #gameArea {
+      position: relative;
+      width: 700px;
+      height: 500px;
+      background: #fff;
+      border-radius: 15px;
+      overflow: hidden;
+      box-shadow: 0 5px 20px rgba(0, 0, 0, 0.3);
+      cursor: none;
+    }
+    #score {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      font-size: 22px;
+      font-weight: bold;
+      color: #222;
+    }
+    #gameOver {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      font-size: 40px;
+      font-weight: bold;
+      color: red;
+      display: none;
+    }
+    .fruit {
+      position: absolute;
+      width: 60px;
+      height: 60px;
+      border-radius: 50%;
+      overflow: hidden;
+    }
+    .fruit img {
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      user-select: none;
+    }
+    .half {
+      position: absolute;
+      width: 30px;
+      height: 60px;
+      overflow: hidden;
+      transform-origin: center;
+    }
+    .half img {
+      width: 60px;
+      height: 60px;
+      pointer-events: none;
+    }
+    #knife {
+      position: absolute;
+      width: 60px;
+      height: 60px;
+      pointer-events: none;
+      transform: rotate(45deg);
+    }
+  </style>
+</head>
+<body>
+  <div id="gameArea">
+    <div id="score">Score: 0</div>
+    <div id="gameOver">Game Over!</div>
+    <img id="knife" src="https://cdn-icons-png.flaticon.com/512/3944/3944921.png" alt="knife" />
+  </div>
+
+  <script>
+    const gameArea = document.getElementById("gameArea");
+    const knife = document.getElementById("knife");
+    const scoreDisplay = document.getElementById("score");
+    const gameOverText = document.getElementById("gameOver");
+
+    let score = 0;
+    let gameOver = false;
+
+    const fruitImages = [
+      "https://cdn-icons-png.flaticon.com/512/415/415733.png", // apple
+      "https://cdn-icons-png.flaticon.com/512/415/415742.png", // orange
+      "https://cdn-icons-png.flaticon.com/512/415/415744.png", // watermelon
+      "https://cdn-icons-png.flaticon.com/512/415/415745.png", // grapes
+      "https://cdn-icons-png.flaticon.com/512/415/415734.png", // banana
+    ];
+
+    // Move knife with mouse
+    gameArea.addEventListener("mousemove", (e) => {
+      const rect = gameArea.getBoundingClientRect();
+      const x = e.clientX - rect.left - 30;
+      const y = e.clientY - rect.top - 30;
+      knife.style.left = `${x}px`;
+      knife.style.top = `${y}px`;
+    });
+
+    // Create fruit element
+    function createFruit() {
+      if (gameOver) return;
+      const fruit = document.createElement("div");
+      fruit.classList.add("fruit");
+
+      const img = document.createElement("img");
+      img.src = fruitImages[Math.floor(Math.random() * fruitImages.length)];
+      fruit.appendChild(img);
+
+      fruit.style.left = Math.random() * (gameArea.clientWidth - 60) + "px";
+      fruit.style.top = "-60px";
+      gameArea.appendChild(fruit);
+
+      let speed = Math.random() * 2 + 1;
+
+      let fall = setInterval(() => {
+        let top = parseFloat(fruit.style.top);
+        fruit.style.top = top + speed + "px";
+
+        if (top > gameArea.clientHeight - 60) {
+          clearInterval(fall);
+          fruit.remove();
+          endGame();
+        }
+      }, 20);
+
+      // Detect collision with knife
+      let check = setInterval(() => {
+        if (gameOver) {
+          clearInterval(check);
+          return;
+        }
+
+        const fruitRect = fruit.getBoundingClientRect();
+        const knifeRect = knife.getBoundingClientRect();
+
+        if (
+          knifeRect.left < fruitRect.right &&
+          knifeRect.right > fruitRect.left &&
+          knifeRect.top < fruitRect.bottom &&
+          knifeRect.bottom > fruitRect.top
+        ) {
+          clearInterval(fall);
+          clearInterval(check);
+          sliceFruit(fruit);
+        }
+      }, 10);
+    }
+
+    // Slice fruit into halves
+    function sliceFruit(fruit) {
+      score++;
+      scoreDisplay.textContent = "Score: " + score;
+
+      const rect = fruit.getBoundingClientRect();
+      const fruitX = rect.left - gameArea.getBoundingClientRect().left;
+      const fruitY = rect.top - gameArea.getBoundingClientRect().top;
+      const imgSrc = fruit.querySelector("img").src;
+
+      fruit.remove();
+
+      const leftHalf = document.createElement("div");
+      const rightHalf = document.createElement("div");
+      leftHalf.classList.add("half");
+      rightHalf.classList.add("half");
+
+      const imgL = document.createElement("img");
+      const imgR = document.createElement("img");
+      imgL.src = imgSrc;
+      imgR.src = imgSrc;
+
+      leftHalf.appendChild(imgL);
+      rightHalf.appendChild(imgR);
+
+      leftHalf.style.clipPath = "inset(0 30px 0 0)";
+      rightHalf.style.clipPath = "inset(0 0 0 30px)";
+
+      leftHalf.style.left = fruitX + "px";
+      leftHalf.style.top = fruitY + "px";
+      rightHalf.style.left = fruitX + 30 + "px";
+      rightHalf.style.top = fruitY + "px";
+
+      gameArea.appendChild(leftHalf);
+      gameArea.appendChild(rightHalf);
+
+      let angleL = -20;
+      let angleR = 20;
+      let gravity = 5;
+
+      let fall = setInterval(() => {
+        let y1 = parseFloat(leftHalf.style.top);
+        let y2 = parseFloat(rightHalf.style.top);
+        leftHalf.style.top = y1 + gravity + "px";
+        rightHalf.style.top = y2 + gravity + "px";
+        leftHalf.style.transform = `rotate(${angleL}deg)`;
+        rightHalf.style.transform = `rotate(${angleR}deg)`;
+        angleL -= 5;
+        angleR += 5;
+
+        if (y1 > gameArea.clientHeight) {
+          leftHalf.remove();
+          rightHalf.remove();
+          clearInterval(fall);
+        }
+      }, 30);
+    }
+
+    function endGame() {
+      gameOver = true;
+      gameOverText.style.display = "block";
+    }
+
+    // Game loop
+    function startGame() {
+      score = 0;
+      gameOver = false;
+      scoreDisplay.textContent = "Score: 0";
+      gameOverText.style.display = "none";
+
+      const loop = setInterval(() => {
+        if (gameOver) {
+          clearInterval(loop);
+          return;
+        }
+        createFruit();
+      }, 1000);
+    }
+
+    startGame();
+  </script>
+</body>
+</html>

@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>DevConnect – Developer & Client Platform</title>
+<style>
+  * { box-sizing: border-box; font-family: Arial, sans-serif; }
+  body { margin: 0; background: #f7f9fc; }
+  header { background: #2563eb; color: white; padding: 15px 25px; display: flex; justify-content: space-between; align-items: center; }
+  header h1 { margin: 0; font-size: 1.5rem; }
+  button { cursor: pointer; border: none; border-radius: 5px; }
+  .login-btns button { background: white; color: #2563eb; font-weight: bold; padding: 10px 15px; margin: 5px; }
+  main { display: flex; height: calc(100vh - 70px); }
+  .col { flex: 1; border-right: 1px solid #ddd; overflow-y: auto; padding: 15px; }
+  .col:last-child { border-right: none; }
+  .card { background: white; border: 1px solid #ddd; border-radius: 10px; padding: 10px; margin-bottom: 10px; }
+  .card h3 { margin: 0; color: #2563eb; }
+  .btn { padding: 8px 12px; margin-top: 5px; display: inline-block; }
+  .btn-blue { background: #2563eb; color: white; }
+  .btn-green { background: #16a34a; color: white; }
+  .btn-red { background: #dc2626; color: white; }
+  input, textarea { width: 100%; margin: 5px 0; padding: 8px; border: 1px solid #ccc; border-radius: 5px; }
+  .chat-box { height: 65vh; background: white; border: 1px solid #ccc; border-radius: 10px; padding: 10px; overflow-y: auto; }
+  .msg { margin: 5px 0; }
+  .msg.me { text-align: right; }
+  .msg span { display: inline-block; padding: 6px 10px; border-radius: 10px; max-width: 70%; }
+  .msg.me span { background: #2563eb; color: white; }
+  .msg.other span { background: #e5e7eb; }
+</style>
+</head>
+<body>
+ <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+<header>
+  <h1>DevConnect</h1>
+  <div id="user-info"></div>
+</header>
+
+<div id="login-screen" style="text-align:center; padding:40px;">
+  <h2>Welcome to DevConnect</h2>
+  <p>Connect Clients and Developers seamlessly!</p>
+  <div class="login-btns">
+    <button onclick="login('client')">Login as Client</button>
+    <button onclick="login('dev')">Login as Developer</button>
+  </div>
+</div>
+
+<main id="main" style="display:none;">
+  <!-- LEFT PANEL -->
+  <div class="col" id="left-panel"></div>
+
+  <!-- CENTER PANEL -->
+  <div class="col" id="center-panel"></div>
+
+  <!-- RIGHT PANEL -->
+  <div class="col" id="right-panel"></div>
+</main>
+
+<script>
+let user = null;
+let jobs = [];
+let chats = {};
+let activeChat = null;
+
+function login(role) {
+  const name = prompt("Enter your name:");
+  if (!name) return;
+  user = { name, role };
+  document.getElementById("login-screen").style.display = "none";
+  document.getElementById("main").style.display = "flex";
+  document.getElementById("user-info").innerHTML = 
+    `${name} (${role}) <button class='btn btn-red' onclick='logout()'>Logout</button>`;
+  renderLeft();
+  renderCenter();
+  renderRight();
+}
+
+function logout() {
+  location.reload();
+}
+
+function renderLeft() {
+  const left = document.getElementById("left-panel");
+  left.innerHTML = "";
+
+  if (user.role === "client") {
+    left.innerHTML = `
+      <h2>Post a Job</h2>
+      <input id="job-title" placeholder="Job Title" />
+      <textarea id="job-desc" placeholder="Job Description"></textarea>
+      <input id="job-budget" placeholder="Budget ($)" />
+      <button class='btn btn-blue' onclick='postJob()'>Post Job</button>
+    `;
+  } else {
+    left.innerHTML = `
+      <h2>Your Profile</h2>
+      <input id="dev-skills" placeholder="Your Skills (e.g., HTML, JS, React)" />
+      <button class='btn btn-green' onclick='alert("Profile updated!")'>Save Profile</button>
+    `;
+  }
+}
+
+function postJob() {
+  const title = document.getElementById("job-title").value.trim();
+  const desc = document.getElementById("job-desc").value.trim();
+  const budget = document.getElementById("job-budget").value.trim();
+  if (!title || !desc || !budget) return alert("Please fill all fields");
+  
+  const job = { id: Date.now(), client: user.name, title, desc, budget, applicants: [] };
+  jobs.push(job);
+  alert("Job posted successfully!");
+  renderCenter();
+}
+
+function renderCenter() {
+  const center = document.getElementById("center-panel");
+  center.innerHTML = `<h2>${user.role === "client" ? "Your Jobs" : "Available Jobs"}</h2>`;
+  
+  if (jobs.length === 0) {
+    center.innerHTML += `<p>No jobs posted yet.</p>`;
+    return;
+  }
+
+  jobs.forEach(job => {
+    const div = document.createElement("div");
+    div.className = "card";
+    div.innerHTML = `
+      <h3>${job.title}</h3>
+      <p>${job.desc}</p>
+      <small>Budget: $${job.budget}</small><br>
+    `;
+
+    if (user.role === "dev") {
+      div.innerHTML += `<button class='btn btn-blue' onclick='applyToJob(${job.id})'>Apply</button>`;
+    } else if (job.applicants.length > 0) {
+      div.innerHTML += "<p><strong>Applicants:</strong></p>";
+      job.applicants.forEach(a => {
+        div.innerHTML += `<button class='btn' onclick='openChat("${a.devName}")'>${a.devName}</button>`;
+      });
+    }
+    center.appendChild(div);
+  });
+}
+
+function applyToJob(id) {
+  const job = jobs.find(j => j.id === id);
+  if (!job) return;
+  if (job.applicants.some(a => a.devName === user.name)) {
+    alert("You already applied to this job!");
+    return;
+  }
+
+  job.applicants.push({ devName: user.name });
+  alert("Applied successfully!");
+  openChat(job.client);
+  renderCenter();
+}
+
+function openChat(name) {
+  const key = [user.name, name].sort().join("-");
+  activeChat = key;
+  if (!chats[key]) chats[key] = [];
+  renderRight();
+}
+
+function sendMessage() {
+  const input = document.getElementById("chat-input");
+  const msg = input.value.trim();
+  if (!msg) return;
+  chats[activeChat].push({ sender: user.name, text: msg });
+  input.value = "";
+  renderRight();
+}
+
+function renderRight() {
+  const right = document.getElementById("right-panel");
+  right.innerHTML = "<h2>Chat</h2>";
+  
+  if (!activeChat) {
+    right.innerHTML += "<p>No chat open.</p>";
+    return;
+  }
+
+  const box = document.createElement("div");
+  box.className = "chat-box";
+  
+  (chats[activeChat] || []).forEach(m => {
+    const msgDiv = document.createElement("div");
+    msgDiv.className = "msg " + (m.sender === user.name ? "me" : "other");
+    msgDiv.innerHTML = `<span>${m.text}</span>`;
+    box.appendChild(msgDiv);
+  });
+  right.appendChild(box);
+  
+  right.innerHTML += `
+    <div style="display:flex; margin-top:5px;">
+      <input id="chat-input" placeholder="Type a message..." style="flex:1; padding:8px;" 
+             onkeydown="if(event.key==='Enter') sendMessage()"/>
+      <button class='btn btn-blue' onclick='sendMessage()'>Send</button>
+    </div>
+  `;
+
+  // Scroll to bottom after new message
+  box.scrollTop = box.scrollHeight;
+}
+</script>
+
+</body>
+</html>
